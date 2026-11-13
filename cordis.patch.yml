@@ -1,0 +1,4 @@
+- insert:
+    - id: md-live-edit
+      name: '@feifan/dsh-md-live-edit'
+      config: {}

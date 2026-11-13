@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Markdown live edit",
+    "description": "Edit Markdown files directly in the sidebar preview: click any rendered block to edit it in place, without a code mode."
+  }
+}

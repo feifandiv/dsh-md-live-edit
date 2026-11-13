@@ -1,0 +1,57 @@
+{
+  "name": "@fanfan4589/dsh-md-live-edit",
+  "version": "1.0.0",
+  "description": "Edit Markdown files directly in the sidebar preview: block-level editing on the rendered view, without switching to a code mode.",
+  "type": "module",
+  "license": "MIT",
+  "author": "feifandiv",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": ">=0.2.1-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": false,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "homepage": "https://github.com/feifandiv/dsh-md-live-edit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/feifandiv/dsh-md-live-edit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/feifandiv/dsh-md-live-edit/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "markdown",
+    "editor"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
