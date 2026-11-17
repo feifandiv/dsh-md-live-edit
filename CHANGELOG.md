@@ -4,6 +4,22 @@ All notable changes to `@fanfan4589/dsh-md-live-edit` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.3 — 2026-11-17
+
+### Fixed
+
+- **Editor buttons showed raw locale keys.** `labels` were resolved during
+  `apply()`, before `locale.register` installed the dictionary, so the preview
+  rendered `edit.save`, `edit.cancel`, `edit.insertBefore`, `edit.insertAfter`
+  and `edit.delete` instead of translations (and `mode.edit` for the status
+  chip). Labels are now resolved on every render against the registered
+  dictionary, which also makes them follow a live locale switch.
+
+### Added
+
+- `test/labels.test.mjs` renders the body with a translating locale service and
+  fails if any raw key reaches the UI.
+
 ## 1.0.2 — 2026-11-17
 
 Critical: this release fixes a renderer crash loop that made the desktop app

@@ -471,8 +471,11 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------------
     // The document body.
     // ---------------------------------------------------------------------
-    function createBody({ labels, remote }) {
+    function createBody({ t, remote }) {
       function Body(props) {
+        // Resolve labels per render: at apply time the namespace dictionary is
+        // not registered yet, so binding them early froze raw keys into the UI.
+        const labels = buildLabels(t);
         const { content, resourceAddress } = props;
         const parsed = useMemo(() => parseFileAddress(resourceAddress), [resourceAddress]);
         const contentText = content && content.kind === 'text' ? content.text : '';
@@ -778,8 +781,7 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale', 'documentPreviews', 'remote', 'remote.workspaceFiles'],
       apply(ctx) {
         const t = ctx.locale.bind(NS);
-        const labels = buildLabels(t);
-        const Body = createBody({ labels, remote: ctx.remote });
+        const Body = createBody({ t, remote: ctx.remote });
 
         ctx.effect(() => ctx.locale.register(NS, {
           en: dictionaries.en,
