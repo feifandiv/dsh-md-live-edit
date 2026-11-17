@@ -1,6 +1,6 @@
 {
   "name": "@fanfan4589/dsh-md-live-edit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Edit Markdown files directly in the sidebar preview: block-level editing on the rendered view, without switching to a code mode.",
   "type": "module",
   "license": "MIT",
@@ -18,10 +18,14 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "engines": {
-    "dsh": ">=0.2.1-rc.1"
+    "dsh": ">=0.2.2-rc.1 <0.4.0"
   },
   "dsh": {
     "bundle": {
@@ -29,9 +33,10 @@
     },
     "client": {
       "platform": "web",
-      "immediately": false,
+      "immediately": true,
       "inject": [
         "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
+        "@deepseek-ai/dsh-api-workspace-files",
         "@deepseek-ai/dsh-client-locale"
       ]
     }

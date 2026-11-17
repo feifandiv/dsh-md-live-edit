@@ -1,23 +1,28 @@
 /**
  * Client half of the Markdown live-edit bundle.
  *
- * Registers an `extension`-band Markdown preview implementation whose body
- * renders the document as blocks and lets the reader edit each block in
- * place: click a block, edit its source in a small overlay, and the whole
- * document is written back to the workspace file through the Host half's
- * authenticated endpoint. No code mode, no separate editor.
+ * Registers a Markdown preview implementation that renders the document as
+ * blocks and edits each block in place: click a block, edit its source in an
+ * inline editor, and the complete document is written back through the Host
+ * half's authenticated endpoint. No code mode.
+ *
+ * Important: the module id below must equal the package name in package.json,
+ * because the web module system keys factories by the boot-graph entry id.
  */
 window.__ModuleLoader__.load({
-  id: '@feifan/dsh-md-live-edit',
+  id: '@fanfan4589/dsh-md-live-edit',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
     const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
-    const BODY_ID = '@feifan/dsh-md-live-edit/markdown';
+    /** Implementation id; also the keyed slot key the owner dispatches. */
+    const BODY_ID = '@fanfan4589/dsh-md-live-edit/markdown';
     const NS = 'mdLiveEdit';
     const WRITE_ROUTE = '/dsh-md-live-edit/api/write';
     const FILE_PREFIX = 'dsh-resource://file/';
+    /** Page budget for completing a document that arrived partially loaded. */
+    const MAX_FOLLOW_PAGES = 200;
 
     // ---------------------------------------------------------------------
     // File address grammar (mirrors dsh-util-workspace-path).
@@ -26,18 +31,20 @@ window.__ModuleLoader__.load({
       try {
         if (typeof address !== 'string' || !address.startsWith(FILE_PREFIX)) return undefined;
         const end = address.search(/[?#]/);
-        const scope = address.slice(FILE_PREFIX.length, end === -1 ? undefined : end);
-        const slash = scope.indexOf('/');
+        const rest = address.slice(FILE_PREFIX.length, end === -1 ? undefined : end);
+        const slash = rest.indexOf('/');
         if (slash === -1) return undefined;
-        const kind = scope.slice(0, slash);
-        const rest = scope.slice(slash + 1);
-        if (kind !== 'session') return undefined;
-        const first = rest.indexOf('/');
+        if (rest.slice(0, slash) !== 'session') return undefined;
+        const body = rest.slice(slash + 1);
+        const first = body.indexOf('/');
         if (first === -1) return undefined;
-        const id = rest.slice(0, first);
-        const path = rest.slice(first + 1);
-        if (!id || !path) return undefined;
-        return { sessionId: decodeURIComponent(id), path: path.split('/').map(decodeURIComponent).join('/') };
+        const sessionId = body.slice(0, first);
+        const path = body.slice(first + 1);
+        if (!sessionId || !path) return undefined;
+        return {
+          sessionId: decodeURIComponent(sessionId),
+          path: path.split('/').map(decodeURIComponent).join('/'),
+        };
       } catch {
         return undefined;
       }
@@ -45,7 +52,7 @@ window.__ModuleLoader__.load({
 
     // ---------------------------------------------------------------------
     // Markdown block parser. Every block keeps its exact source lines so the
-    // document rebuilds byte-for-byte after one block changes.
+    // document rebuilds byte-for-byte when one block changes.
     // ---------------------------------------------------------------------
     function isFenceStart(line) {
       const m = /^ {0,3}(```+|~~~+)/.exec(line);
@@ -88,8 +95,10 @@ window.__ModuleLoader__.load({
       if (fm) {
         blocks.push({ type: 'frontmatter', lines: lines.slice(0, fm.end + 1) });
         cursor = fm.end + 1;
-        // Absorb one blank line after the frontmatter into the marker.
-        if (cursor < lines.length && isBlank(lines[cursor])) { blocks.push({ type: 'blank', lines: [lines[cursor]] }); cursor += 1; }
+        if (cursor < lines.length && isBlank(lines[cursor])) {
+          blocks.push({ type: 'blank', lines: [lines[cursor]] });
+          cursor += 1;
+        }
       }
       while (cursor < lines.length) {
         const line = lines[cursor];
@@ -107,12 +116,19 @@ window.__ModuleLoader__.load({
             if (isFenceEnd(lines[cursor], fence)) { cursor++; break; }
             cursor++;
           }
-          blocks.push({ type: 'code', lines: lines.slice(start, cursor), language: /^ {0,3}(?:```+|~~~+)(.*)$/.exec(line)[1].trim() });
+          blocks.push({
+            type: 'code',
+            lines: lines.slice(start, cursor),
+            language: /^ {0,3}(?:```+|~~~+)(.*)$/.exec(line)[1].trim(),
+          });
           continue;
         }
-        if (isAtx(line)) { blocks.push({ type: 'heading', level: /^ {0,3}(#{1,6})/.exec(line)[1].length, lines: [line] }); cursor++; continue; }
+        if (isAtx(line)) {
+          blocks.push({ type: 'heading', level: /^ {0,3}(#{1,6})/.exec(line)[1].length, lines: [line] });
+          cursor++;
+          continue;
+        }
         if (isHr(line)) { blocks.push({ type: 'hr', lines: [line] }); cursor++; continue; }
-        // Table: current row + delimiter next.
         if (looksTableRow(line) && cursor + 1 < lines.length && isTableDelimiter(lines[cursor + 1])) {
           const start = cursor;
           cursor += 2;
@@ -122,31 +138,32 @@ window.__ModuleLoader__.load({
         }
         if (isQuote(line)) {
           const start = cursor;
-          while (cursor < lines.length && (isQuote(lines[cursor]) || (isBlank(lines[cursor]) && cursor + 1 < lines.length && isQuote(lines[cursor + 1])))) cursor++;
+          while (cursor < lines.length && (isQuote(lines[cursor]) ||
+            (isBlank(lines[cursor]) && cursor + 1 < lines.length && isQuote(lines[cursor + 1])))) cursor++;
           blocks.push({ type: 'quote', lines: lines.slice(start, cursor) });
           continue;
         }
         if (isListItem(line)) {
           const start = cursor;
-          const base = listIndentOf(line);
           cursor++;
           while (cursor < lines.length) {
             const l = lines[cursor];
             if (isBlank(l)) {
-              // A blank inside a list continues only when an indented item follows.
               let peek = cursor + 1;
               while (peek < lines.length && isBlank(lines[peek])) peek++;
-              if (peek < lines.length && (isListItem(lines[peek]) || /^\s{1,}\S/.test(lines[peek]))) { cursor = peek; continue; }
+              if (peek < lines.length && (isListItem(lines[peek]) || /^\s{1,}\S/.test(lines[peek]))) {
+                cursor = peek;
+                continue;
+              }
               break;
             }
             if (isListItem(l)) { cursor++; continue; }
-            if (/^\s+\S/.test(l) && !isAtx(l) && !isQuote(l)) { cursor++; continue; } // continuation / nested
+            if (/^\s+\S/.test(l) && !isAtx(l) && !isQuote(l)) { cursor++; continue; }
             break;
           }
           blocks.push({ type: 'list', lines: lines.slice(start, cursor) });
           continue;
         }
-        // Paragraph, with Setext underline joining.
         const start = cursor;
         cursor++;
         while (cursor < lines.length) {
@@ -159,8 +176,10 @@ window.__ModuleLoader__.load({
         }
         const para = lines.slice(start, cursor);
         const last = para[para.length - 1];
-        const joined = isSetext1(last) ? { type: 'heading', level: 1 } : isSetext2(last) ? { type: 'heading', level: 2 } : { type: 'paragraph' };
-        blocks.push({ ...joined, lines: para });
+        const kind = isSetext1(last) ? { type: 'heading', level: 1 }
+          : isSetext2(last) ? { type: 'heading', level: 2 }
+            : { type: 'paragraph' };
+        blocks.push({ ...kind, lines: para });
       }
       return blocks.map((b) => ({ ...b, source: b.lines.join('\n') }));
     }
@@ -168,6 +187,69 @@ window.__ModuleLoader__.load({
     function rebuildText(blocks) {
       return blocks.map((b) => b.source).join('\n');
     }
+
+    /** Character spans of each block inside the joined document text. */
+    function blockSpans(blocks) {
+      let offset = 0;
+      return blocks.map((b) => {
+        const span = { start: offset, end: offset + b.source.length };
+        offset = span.end + 1;
+        return span;
+      });
+    }
+
+    // #region mdle-text-ops
+    /**
+     * Replace one block's source, or delete it when the source is empty.
+     * A deletion also consumes the adjacent separator and collapses a blank
+     * neighbour, so removing a paragraph does not leave a doubled blank line.
+     * @param text - complete document text.
+     * @param blocks - the parsed blocks `text` came from.
+     * @param index - block index to replace.
+     * @param source - new block source; empty deletes the block.
+     * @returns the next document text, or null when the index is out of range.
+     */
+    function replaceBlockText(text, blocks, index, source) {
+      const spans = blockSpans(blocks);
+      const span = spans[index];
+      if (!span) return null;
+      if (source !== '') return text.slice(0, span.start) + source + text.slice(span.end);
+      let startCut = span.start;
+      let endCut = span.end;
+      if (endCut + 1 <= text.length) endCut += 1;
+      else if (startCut > 0) startCut -= 1;
+      const previousBlank = index === 0 || (blocks[index - 1] && blocks[index - 1].type === 'blank');
+      const following = blocks[index + 1];
+      if (previousBlank && following && following.type === 'blank' && spans[index + 1]) {
+        const blank = spans[index + 1];
+        endCut = blank.end + 1 <= text.length ? blank.end + 1 : blank.end;
+      }
+      return text.slice(0, startCut) + text.slice(endCut);
+    }
+
+    /**
+     * Insert one block at a boundary, separated by blank lines so the new text
+     * becomes its own paragraph instead of merging into a neighbour.
+     * @param text - complete document text.
+     * @param blocks - the parsed blocks `text` came from.
+     * @param index - boundary index; equal to the block count appends.
+     * @param source - block source to insert.
+     * @returns the next document text.
+     */
+    function insertBlockText(text, blocks, index, source) {
+      const spans = blockSpans(blocks);
+      const at = index < spans.length ? spans[index].start : text.length;
+      const before = text.slice(0, at);
+      const after = text.slice(at);
+      const lead = before === '' || before.endsWith('\n\n')
+        ? ''
+        : before.endsWith('\n') ? '\n' : '\n\n';
+      const trail = after === '' || after.startsWith('\n\n')
+        ? ''
+        : after.startsWith('\n') ? '\n' : '\n\n';
+      return before + lead + source + trail + after;
+    }
+    // #endregion mdle-text-ops
 
     // ---------------------------------------------------------------------
     // Inline renderer: images, links, code, bold, strike, italic.
@@ -231,29 +313,37 @@ window.__ModuleLoader__.load({
       const rows = block.lines.slice(2).map(splitRow);
       return h('table', { key, className: 'mdle-table' },
         h('thead', {}, h('tr', {}, header.map((c, i) => h('th', { key: i }, inlineNodes(c, key + 'h' + i))))),
-        h('tbody', {}, rows.map((r, ri) => h('tr', { key: ri }, r.map((c, ci) => h('td', { key: ci }, inlineNodes(c, key + 'r' + ri + 'c' + ci)))))));
+        h('tbody', {}, rows.map((r, ri) => h('tr', { key: ri }, r.map((c, ci) =>
+          h('td', { key: ci }, inlineNodes(c, key + 'r' + ri + 'c' + ci)))))));
     }
 
     function renderList(block, key) {
       const items = [];
       for (const line of block.lines) {
         const m = /^(\s*)(?:[-*+]|\d{1,9}[.)])(\s+)(.*)$/.exec(line);
-        if (m && m[1].replace(/\t/g, '  ').length <= 3) items.push({ ordered: /^\d/.test(line.trim()), text: m[4] });
-        else if (items.length) items[items.length - 1].text += '\n' + line.trim();
+        if (m && m[1].replace(/\t/g, '  ').length <= 3) {
+          items.push({ ordered: /^\d/.test(line.trim()), text: m[4] });
+        } else if (items.length) {
+          items[items.length - 1].text += '\n' + line.trim();
+        }
       }
       const ordered = items.length > 0 && items.every((i) => i.ordered);
       return h(ordered ? 'ol' : 'ul', { key, className: 'mdle-list' },
-        items.map((it, i) => h('li', { key: i }, it.text.split('\n').map((seg, si) => h(React.Fragment, { key: si }, si > 0 ? h('br') : null, inlineNodes(seg, key + 'li' + i + 's' + si))))));
+        items.map((it, i) => h('li', { key: i }, it.text.split('\n').map((seg, si) =>
+          h(React.Fragment, { key: si }, si > 0 ? h('br') : null,
+            inlineNodes(seg, key + 'li' + i + 's' + si))))));
     }
 
     function renderQuote(block, key) {
       const body = block.lines.map((l) => l.replace(/^ {0,3}> ?/, '')).join('\n');
       return h('blockquote', { key, className: 'mdle-quote' },
-        body.split(/\n{2,}/).map((seg, i) => h('p', { key: i, className: 'mdle-quote-p' }, inlineNodes(seg.replace(/\n/g, ' '), key + 'q' + i))));
+        body.split(/\n{2,}/).map((seg, i) =>
+          h('p', { key: i, className: 'mdle-quote-p' }, inlineNodes(seg.replace(/\n/g, ' '), key + 'q' + i))));
     }
 
     function renderParagraph(block, key) {
-      return h('p', { key, className: 'mdle-p' }, block.lines.map((l, i) => h(React.Fragment, { key: i }, i > 0 ? h('br') : null, inlineNodes(l, key + 'p' + i))));
+      return h('p', { key, className: 'mdle-p' },
+        block.lines.map((l, i) => h(React.Fragment, { key: i }, i > 0 ? h('br') : null, inlineNodes(l, key + 'p' + i))));
     }
 
     function renderBlock(block, key) {
@@ -270,10 +360,8 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function isEmptySource(source) { return source.trim() === ''; }
-
     // ---------------------------------------------------------------------
-    // Block editor: textarea + toolbar, saves with Cmd/Ctrl+Enter or blur.
+    // Inline block editor.
     // ---------------------------------------------------------------------
     function BlockEditor({ initial, isNew, labels, onSave, onCancel, onInsertBefore, onInsertAfter, onDelete }) {
       const [value, setValue] = useState(initial);
@@ -288,235 +376,37 @@ window.__ModuleLoader__.load({
         const ta = ref.current;
         if (!ta) return;
         ta.style.height = 'auto';
-        ta.style.height = Math.min(Math.max(ta.scrollHeight + 2, 44), 480) + 'px';
+        ta.style.height = Math.min(Math.max(ta.scrollHeight + 2, 48), 460) + 'px';
       }, []);
       useEffect(autosize, [value, autosize]);
       const save = useCallback(() => { onSave(value); }, [value, onSave]);
-      return h('div', { className: 'mdle-editor', onKeyDown: (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
-        else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-        e.stopPropagation();
-      } },
+      return h('div', {
+        className: 'mdle-editor',
+        onKeyDown: (e) => {
+          e.stopPropagation();
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+          else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        },
+      },
         h('textarea', {
-          ref, className: 'mdle-textarea', value,
+          ref,
+          className: 'mdle-textarea',
+          value,
           placeholder: labels.placeholder,
+          spellCheck: false,
           onChange: (e) => setValue(e.target.value),
-          onBlur: () => { if (value !== initial || isNew) save(); },
         }),
-        h('div', { className: 'mdle-editor-bar' },
-          h('button', { type: 'button', className: 'mdle-btn mdle-btn-primary', onClick: save, title: '⌘↩' }, labels.save),
+        h('div', {
+          className: 'mdle-editor-bar',
+          // Keep focus in the textarea so a toolbar click cannot fire a blur save first.
+          onMouseDown: (e) => e.preventDefault(),
+        },
+          h('button', { type: 'button', className: 'mdle-btn mdle-btn-primary', onClick: save }, labels.save + ' ⌘↩'),
           h('button', { type: 'button', className: 'mdle-btn', onClick: onCancel }, labels.cancel),
           h('span', { className: 'mdle-bar-spacer' }),
-          h('button', { type: 'button', className: 'mdle-btn', onClick: onInsertBefore, title: labels.insertBeforeTip }, labels.insertBefore),
-          h('button', { type: 'button', className: 'mdle-btn', onClick: onInsertAfter, title: labels.insertAfterTip }, labels.insertAfter),
+          h('button', { type: 'button', className: 'mdle-btn', onClick: onInsertBefore }, labels.insertBefore),
+          h('button', { type: 'button', className: 'mdle-btn', onClick: onInsertAfter }, labels.insertAfter),
           !isNew && h('button', { type: 'button', className: 'mdle-btn mdle-btn-danger', onClick: onDelete }, labels.delete)));
-    }
-
-    // ---------------------------------------------------------------------
-    // The document body: rendered blocks + in-place block editing.
-    // ---------------------------------------------------------------------
-    function MarkdownEditBody({ content, resourceAddress, t }) {
-      const labels = useMemo(() => buildLabels(t), [t]);
-      const parsed = useMemo(() => parseFileAddress(resourceAddress), [resourceAddress]);
-      const text = content && content.kind === 'text' ? content.text : '';
-      const [blocks, setBlocks] = useState(() => parseMarkdown(text));
-      const [editing, setEditing] = useState(null); // { index, isNew }
-      const [conflict, setConflict] = useState(false);
-      const [saveState, setSaveState] = useState({ kind: 'idle' });
-      const lastSavedRef = useRef(text);
-      const lastExternalRef = useRef(text);
-      const editingRef = useRef(null);
-      editingRef.current = editing;
-
-      // Sync external content changes without clobbering an active edit.
-      useEffect(() => {
-        if (text === lastSavedRef.current || text === lastExternalRef.current) return;
-        if (editingRef.current !== null) { setConflict(true); return; }
-        lastExternalRef.current = text;
-        lastSavedRef.current = text;
-        setBlocks(parseMarkdown(text));
-      }, [text]);
-
-      const persist = useCallback(async (nextBlocks) => {
-        const nextText = rebuildText(nextBlocks);
-        setBlocks(nextBlocks);
-        if (!parsed) { setSaveState({ kind: 'error', message: 'Bad file address' }); return; }
-        setSaveState({ kind: 'saving' });
-        try {
-          const res = await fetch(WRITE_ROUTE, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ sessionId: parsed.sessionId, path: parsed.path, content: nextText }),
-          });
-          const data = await res.json();
-          if (data && data.ok) {
-            lastSavedRef.current = nextText;
-            lastExternalRef.current = nextText;
-            setSaveState({ kind: 'saved', at: Date.now() });
-            setConflict(false);
-          } else {
-            setSaveState({ kind: 'error', message: (data && (data.error || data.code)) || ('HTTP ' + res.status) });
-          }
-        } catch (error) {
-          setSaveState({ kind: 'error', message: String(error && error.message || error) });
-        }
-      }, [parsed]);
-
-      const saveBlock = useCallback((index, source, isNew) => {
-        const next = blocks.slice();
-        if (isEmptySource(source)) {
-          if (isNew) { setEditing(null); return; }
-          next.splice(index, 1);
-        } else {
-          next[index] = { ...parseMarkdown(source)[0], source };
-        }
-        setEditing(null);
-        persist(next);
-      }, [blocks, persist]);
-
-      const insertBlock = useCallback((index) => {
-        const para = { type: 'paragraph', lines: [''], source: '' };
-        const next = blocks.slice();
-        next.splice(index, 0, para);
-        setBlocks(next);
-        setEditing({ index, isNew: true });
-      }, [blocks]);
-
-      const deleteBlock = useCallback((index) => {
-        const next = blocks.slice();
-        next.splice(index, 1);
-        setEditing(null);
-        persist(next);
-      }, [blocks, persist]);
-
-      const retry = useCallback(() => { persist(blocks); }, [blocks, persist]);
-      const acceptExternal = useCallback(() => {
-        lastExternalRef.current = text;
-        lastSavedRef.current = text;
-        setBlocks(parseMarkdown(text));
-        setConflict(false);
-        setEditing(null);
-      }, [text]);
-
-      if (content && content.kind !== 'text') return null;
-
-      return h('div', { className: 'mdle-root', 'data-mdle-document': true },
-        h('style', {}, CSS),
-        h('div', { className: 'mdle-toolbar' },
-          conflict && h('div', { className: 'mdle-notice' },
-            h('span', {}, labels.conflict),
-            h('button', { type: 'button', className: 'mdle-btn', onClick: acceptExternal }, labels.useExternal),
-            h('button', { type: 'button', className: 'mdle-btn', onClick: () => setConflict(false) }, labels.keepMine)),
-          !conflict && saveState.kind === 'error' && h('div', { className: 'mdle-notice mdle-notice-error' },
-            h('span', {}, labels.saveFailed + '：' + saveState.message),
-            h('button', { type: 'button', className: 'mdle-btn', onClick: retry }, labels.retry)),
-          !conflict && saveState.kind === 'saved' && h('div', { className: 'mdle-notice mdle-notice-ok' }, labels.saved),
-          !conflict && saveState.kind === 'saving' && h('div', { className: 'mdle-notice' }, labels.saving)),
-        h('div', { className: 'mdle-doc' },
-          blocks.map((block, index) => {
-            const active = editing && editing.index === index;
-            return h('div', {
-              key: index,
-              className: 'mdle-block' + (block.type === 'blank' ? ' mdle-block-blank' : '') + (active ? ' mdle-block-active' : ''),
-              'data-mdle-type': block.type,
-            },
-              block.type === 'blank'
-                ? h('div', { className: 'mdle-blank-line', onClick: () => !editing && insertBlock(index), title: labels.clickToAdd })
-                : active
-                  ? h(BlockEditor, {
-                      initial: block.source,
-                      isNew: editing.isNew,
-                      labels,
-                      onSave: (source) => saveBlock(index, source, editing.isNew),
-                      onCancel: () => editing.isNew ? (() => { const next = blocks.slice(); next.splice(index, 1); setBlocks(next); setEditing(null); })() : setEditing(null),
-                      onInsertBefore: () => insertBlock(index),
-                      onInsertAfter: () => insertBlock(index + 1),
-                      onDelete: () => deleteBlock(index),
-                    })
-                  : h('div', {
-                      className: 'mdle-view',
-                      onClick: (e) => {
-                        if (editing) return;
-                        if (e.target.closest('a,img,button')) return;
-                        setEditing({ index, isNew: false });
-                      },
-                      title: labels.clickToEdit,
-                    }, renderBlock(block, 'b' + index)));
-          }),
-          h('div', { className: 'mdle-add', onClick: () => !editing && insertBlock(blocks.length) }, '+ ' + labels.addBlock)));
-    }
-
-    // ---------------------------------------------------------------------
-    // Locale dictionaries.
-    // ---------------------------------------------------------------------
-    const dictionaries = {
-      en: {
-        'viewer.label': 'Editable Markdown',
-        'edit.hint': 'Click any text to edit it in place',
-        'edit.placeholder': 'Markdown source of this block…',
-        'edit.save': 'Save',
-        'edit.cancel': 'Cancel',
-        'edit.insertBefore': 'Insert above',
-        'edit.insertAfter': 'Insert below',
-        'edit.delete': 'Delete',
-        'edit.addBlock': 'Add block',
-        'edit.clickToEdit': 'Click to edit this block',
-        'edit.clickToAdd': 'Click to add a block',
-        'edit.insertBeforeTip': 'Insert a block above',
-        'edit.insertAfterTip': 'Insert a block below',
-        'status.saving': 'Saving…',
-        'status.saved': 'Saved',
-        'status.failed': 'Save failed',
-        'status.retry': 'Retry',
-        'status.conflict': 'This file changed on disk while you were editing.',
-        'status.useExternal': 'Discard my edits and reload',
-        'status.keepMine': 'Keep my edits',
-      },
-      zh: {
-        'viewer.label': 'Markdown 可编辑',
-        'edit.hint': '点击任意文本即可就地编辑',
-        'edit.placeholder': '该块的 Markdown 源码…',
-        'edit.save': '保存',
-        'edit.cancel': '取消',
-        'edit.insertBefore': '上方插入',
-        'edit.insertAfter': '下方插入',
-        'edit.delete': '删除',
-        'edit.addBlock': '添加块',
-        'edit.clickToEdit': '点击编辑此块',
-        'edit.clickToAdd': '点击添加块',
-        'edit.insertBeforeTip': '在此块上方插入',
-        'edit.insertAfterTip': '在此块下方插入',
-        'status.saving': '保存中…',
-        'status.saved': '已保存',
-        'status.failed': '保存失败',
-        'status.retry': '重试',
-        'status.conflict': '文件已在其他地方被修改。',
-        'status.useExternal': '放弃本地修改并重新加载',
-        'status.keepMine': '保留我的编辑',
-      },
-    };
-
-    function buildLabels(t) {
-      return {
-        placeholder: t('edit.placeholder'),
-        save: t('edit.save'),
-        cancel: t('edit.cancel'),
-        insertBefore: t('edit.insertBefore'),
-        insertAfter: t('edit.insertAfter'),
-        insertBeforeTip: t('edit.insertBeforeTip'),
-        insertAfterTip: t('edit.insertAfterTip'),
-        delete: t('edit.delete'),
-        addBlock: t('edit.addBlock'),
-        clickToEdit: t('edit.clickToEdit'),
-        clickToAdd: t('edit.clickToAdd'),
-        saving: t('status.saving'),
-        saved: t('status.saved'),
-        saveFailed: t('status.failed'),
-        retry: t('status.retry'),
-        conflict: t('status.conflict'),
-        useExternal: t('status.useExternal'),
-        keepMine: t('status.keepMine'),
-      };
     }
 
     // ---------------------------------------------------------------------
@@ -524,10 +414,11 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------------
     const CSS = `
 .mdle-root { position: relative; font-family: var(--dsw-font, inherit); color: var(--dsw-alias-label-primary); font-size: var(--dsh-content-font-size-secondary, 13px); line-height: 1.7; }
-.mdle-doc { padding: 10px 14px 48px; }
+.mdle-doc { padding: 8px 14px 56px; }
 .mdle-block { position: relative; border-radius: 6px; }
-.mdle-block-blank { min-height: 8px; cursor: text; }
-.mdle-blank-line { height: 100%; min-height: 8px; }
+.mdle-block-blank { min-height: 10px; }
+.mdle-blank-line { min-height: 10px; cursor: text; border-radius: 4px; }
+.mdle-blank-line:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.12)); }
 .mdle-view { cursor: text; border-radius: 6px; padding: 1px 6px; margin: 0 -6px; }
 .mdle-block:not(.mdle-block-active):hover .mdle-view { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.12)); }
 .mdle-block-active { background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.08)); padding: 4px 6px; margin: 0 -6px; }
@@ -549,7 +440,7 @@ window.__ModuleLoader__.load({
 .mdle-hr { border: none; border-top: .5px solid var(--dsw-alias-border-l2, rgba(128,128,128,.35)); margin: 12px 0; }
 .mdle-img { max-width: 100%; border-radius: 6px; display: block; margin: 6px 0; }
 .mdle-frontmatter { white-space: pre-wrap; font-family: var(--dsw-font-mono, ui-monospace, monospace); font-size: 11.5px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,.06)); border: .5px solid var(--dsw-alias-border-l2, rgba(128,128,128,.3)); border-radius: 8px; padding: 8px 10px; margin: 4px 0 10px; }
-.mdle-editor { display: flex; flex-direction: column; gap: 6px; }
+.mdle-editor { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
 .mdle-textarea { width: 100%; box-sizing: border-box; resize: none; border: .5px solid var(--dsw-alias-border-l2, rgba(128,128,128,.4)); border-radius: 6px; background: var(--dsw-alias-bg-layer-1, transparent); color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-mono, ui-monospace, monospace); font-size: 12.5px; line-height: 1.55; padding: 8px 10px; outline: none; }
 .mdle-textarea:focus { border-color: var(--dsw-alias-border-accent, #4f8cff); }
 .mdle-editor-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -557,28 +448,336 @@ window.__ModuleLoader__.load({
 .mdle-btn { font: inherit; font-size: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.12)); border: .5px solid var(--dsw-alias-border-l2, rgba(128,128,128,.35)); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
 .mdle-btn:hover { background: var(--dsw-alias-bg-layer-3, rgba(128,128,128,.2)); }
 .mdle-btn-primary { background: var(--dsw-alias-interactive-bg-accent, #4f8cff); border-color: transparent; color: var(--dsw-alias-label-on-accent, #fff); }
-.mdle-btn-primary:hover { filter: brightness(1.08); background: var(--dsw-alias-interactive-bg-accent, #4f8cff); }
+.mdle-btn-primary:hover { background: var(--dsw-alias-interactive-bg-accent, #4f8cff); filter: brightness(1.08); }
 .mdle-btn-danger { color: var(--dsw-alias-label-red, #d5484f); }
-.mdle-toolbar { position: sticky; top: 0; z-index: 3; display: flex; flex-direction: column; gap: 4px; padding: 0 14px; }
-.mdle-notice { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.12)); border: .5px solid var(--dsw-alias-border-l2, rgba(128,128,128,.3)); border-radius: 6px; padding: 4px 10px; margin-top: 6px; }
+.mdle-status { position: sticky; top: 0; z-index: 3; display: flex; flex-direction: column; gap: 4px; padding: 6px 14px 0; }
+.mdle-hint { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); display: flex; align-items: center; gap: 8px; }
+.mdle-chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.14)); color: var(--dsw-alias-label-secondary); }
+.mdle-chip-live { background: var(--dsw-alias-interactive-bg-accent, #4f8cff); color: var(--dsw-alias-label-on-accent, #fff); }
+.mdle-notice { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,.12)); border: .5px solid var(--dsw-alias-border-l2, rgba(128,128,128,.3)); border-radius: 6px; padding: 4px 10px; margin-top: 4px; }
 .mdle-notice-error { color: var(--dsw-alias-label-red, #d5484f); border-color: var(--dsw-alias-label-red, #d5484f); }
 .mdle-notice-ok { color: var(--dsw-alias-label-green, #30a46c); }
-.mdle-add { margin-top: 10px; padding: 8px; text-align: center; color: var(--dsw-alias-label-tertiary); border: 1px dashed var(--dsw-alias-border-l2, rgba(128,128,128,.4)); border-radius: 8px; cursor: pointer; }
+.mdle-add { margin: 12px 14px 0; padding: 8px; text-align: center; color: var(--dsw-alias-label-tertiary); border: 1px dashed var(--dsw-alias-border-l2, rgba(128,128,128,.4)); border-radius: 8px; cursor: pointer; }
 .mdle-add:hover { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.1)); }
-a { color: var(--dsw-alias-label-link, #4f8cff); }
+.mdle-root a { color: var(--dsw-alias-label-link, #4f8cff); }
 `;
+
+    // ---------------------------------------------------------------------
+    // The document body.
+    // ---------------------------------------------------------------------
+    function createBody({ labels, remote }) {
+      function Body(props) {
+        const { content, resourceAddress } = props;
+        const parsed = useMemo(() => parseFileAddress(resourceAddress), [resourceAddress]);
+        const contentText = content && content.kind === 'text' ? content.text : '';
+        const complete = !!content && content.kind === 'text' && content.eof === true;
+
+        const [docText, setDocText] = useState(complete ? contentText : '');
+        const [ready, setReady] = useState(complete);
+        const [busyText, setBusyText] = useState(false);
+        const [loadError, setLoadError] = useState(null);
+        const [editing, setEditing] = useState(null); // { index, isNew }
+        const [status, setStatus] = useState({ kind: 'idle' });
+        const [conflict, setConflict] = useState(false);
+
+        const seenRef = useRef(contentText);
+        const editingRef = useRef(null);
+        editingRef.current = editing;
+        const loadingRef = useRef(false);
+
+        // Complete a partially loaded document before allowing any edit, so a
+        // save can never truncate the file to the first page.
+        useEffect(() => {
+          if (complete || !parsed || loadingRef.current) return;
+          loadingRef.current = true;
+          setBusyText(true);
+          const controller = new AbortController();
+          (async () => {
+            try {
+              let text = contentText;
+              let offset = 1;
+              const pages = (content && content.pages) || [];
+              if (pages.length > 0) {
+                const last = pages[pages.length - 1];
+                offset = (last.offset || 1) + (last.lines || 0);
+              } else if (text) {
+                offset = text.split('\n').length + 1;
+              }
+              let followed = 0;
+              let done = false;
+              while (followed < MAX_FOLLOW_PAGES) {
+                const res = await remote.workspaceFiles.read(parsed.sessionId, parsed.path, { offset }, controller.signal);
+                if (!res || res.ok !== true) throw new Error((res && res.error && res.error.message) || 'read failed');
+                const page = res.value;
+                if (page.lines > 0) text = text ? text + '\n' + page.text : page.text;
+                followed += 1;
+                if (page.eof) { done = true; break; }
+                offset = (page.offset || offset) + page.lines;
+              }
+              if (controller.signal.aborted) return;
+              if (!done) throw new Error('document too large to load completely');
+              setDocText(text);
+              seenRef.current = text;
+              setLoadError(null);
+              setReady(true);
+            } catch (error) {
+              if (!controller.signal.aborted) setLoadError(String((error && error.message) || error));
+            } finally {
+              if (!controller.signal.aborted) { setBusyText(false); loadingRef.current = false; }
+            }
+          })();
+          return () => controller.abort();
+        }, [complete, parsed, contentText]);
+
+        // Adopt external changes unless an edit is in progress.
+        useEffect(() => {
+          if (!complete) return;
+          if (contentText === seenRef.current) return;
+          seenRef.current = contentText;
+          if (editingRef.current !== null) { setConflict(true); return; }
+          setDocText(contentText);
+          setReady(true);
+        }, [contentText, complete]);
+
+        const blocks = useMemo(() => parseMarkdown(docText), [docText]);
+
+        const persist = useCallback(async (nextText, prevText) => {
+          setDocText(nextText);
+          if (!parsed) return;
+          setStatus({ kind: 'saving' });
+          try {
+            const res = await fetch(WRITE_ROUTE, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ sessionId: parsed.sessionId, path: parsed.path, content: nextText }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data && data.ok) {
+              seenRef.current = nextText;
+              setStatus({ kind: 'saved', at: Date.now() });
+              setConflict(false);
+            } else {
+              setDocText(prevText);
+              setStatus({ kind: 'error', message: (data && (data.error || data.code)) || ('HTTP ' + res.status) });
+            }
+          } catch (error) {
+            setDocText(prevText);
+            setStatus({ kind: 'error', message: String((error && error.message) || error) });
+          }
+        }, [parsed]);
+
+        const editable = !!parsed && ready && !busyText;
+
+        const saveExisting = useCallback((index, newSource) => {
+          const next = replaceBlockText(docText, blocks, index, newSource);
+          setEditing(null);
+          if (next !== null && next !== docText) persist(next, docText);
+        }, [blocks, docText, persist]);
+
+        const insertAt = useCallback((index, source) => {
+          setEditing(null);
+          persist(insertBlockText(docText, blocks, index, source), docText);
+        }, [blocks, docText, persist]);
+
+        if (content && content.kind !== 'text') return null;
+
+        const editProps = (index, isNew, initial) => ({
+          initial,
+          isNew,
+          labels,
+          onSave: (source) => {
+            if (source.trim() === '') {
+              if (isNew) { setEditing(null); return; }
+              saveExisting(index, '');
+              return;
+            }
+            if (isNew) insertAt(index, source);
+            else saveExisting(index, source);
+          },
+          onCancel: () => setEditing(null),
+          onInsertBefore: () => setEditing({ index, isNew: true }),
+          onInsertAfter: () => setEditing({ index: index + 1, isNew: true }),
+          onDelete: () => saveExisting(index, ''),
+        });
+
+        const children = [];
+        blocks.forEach((block, index) => {
+          const activeExisting = editing && !editing.isNew && editing.index === index;
+          const showNewBefore = editing && editing.isNew && editing.index === index;
+          if (showNewBefore) children.push(h(BlockEditor, { key: 'new-' + index, ...editProps(index, true, '') }));
+          if (block.type === 'blank') {
+            children.push(h('div', {
+              key: 'b' + index,
+              className: 'mdle-block mdle-block-blank',
+            }, editable
+              ? h('div', {
+                className: 'mdle-blank-line',
+                title: labels.clickToAdd,
+                onClick: () => { if (!editing) setEditing({ index, isNew: true }); },
+              })
+              : null));
+            return;
+          }
+          children.push(h('div', {
+            key: 'b' + index,
+            className: 'mdle-block' + (activeExisting ? ' mdle-block-active' : ''),
+            'data-mdle-type': block.type,
+          }, activeExisting
+            ? h(BlockEditor, editProps(index, false, block.source))
+            : h('div', {
+              className: 'mdle-view',
+              title: editable ? labels.clickToEdit : undefined,
+              onClick: (e) => {
+                if (!editable || editing) return;
+                if (e.target.closest('a,img,button,textarea')) return;
+                setEditing({ index, isNew: false });
+              },
+            }, renderBlock(block, 'b' + index))));
+        });
+        if (editing && editing.isNew && editing.index >= blocks.length) {
+          children.push(h(BlockEditor, { key: 'new-end', ...editProps(blocks.length, true, '') }));
+        }
+
+        return h('div', { className: 'mdle-root', 'data-mdle-root': true, 'data-mdle-mode': editable ? 'edit' : 'readonly' },
+          h('style', {}, CSS),
+          h('div', { className: 'mdle-status' },
+            h('div', { className: 'mdle-hint' },
+              h('span', { className: 'mdle-chip' + (editable ? ' mdle-chip-live' : '') },
+                editable ? labels.modeEdit : labels.modeReadonly),
+              h('span', {}, editable ? labels.hint : ''),
+              status.kind === 'saving' ? h('span', {}, labels.saving) : null,
+              status.kind === 'saved' ? h('span', {}, '· ' + labels.saved) : null),
+            conflict ? h('div', { className: 'mdle-notice' },
+              h('span', {}, labels.conflict),
+              h('button', {
+                type: 'button', className: 'mdle-btn',
+                onClick: () => {
+                  setDocText(contentText);
+                  seenRef.current = contentText;
+                  setConflict(false);
+                  setEditing(null);
+                },
+              }, labels.reload),
+              h('button', {
+                type: 'button', className: 'mdle-btn',
+                onClick: () => setConflict(false),
+              }, labels.keepMine)) : null,
+            status.kind === 'error' ? h('div', { className: 'mdle-notice mdle-notice-error' },
+              h('span', {}, labels.saveFailed + '：' + status.message),
+              h('button', {
+                type: 'button', className: 'mdle-btn',
+                onClick: () => { setStatus({ kind: 'idle' }); persist(docText, docText); },
+              }, labels.retry)) : null,
+            loadError ? h('div', { className: 'mdle-notice mdle-notice-error' },
+              h('span', {}, labels.loadFailed + '：' + loadError)) : null,
+            status.kind === 'saved' && Date.now() - status.at > 4000 ? null : null),
+          h('div', {
+            className: 'mdle-doc',
+            onMouseDown: (e) => {
+              // Clicking empty document space closes an untouched new-block editor.
+              if (!editing || !editing.isNew) return;
+              if (e.target.closest('.mdle-editor')) return;
+              setEditing(null);
+            },
+          }, children),
+          editable ? h('div', {
+            className: 'mdle-add',
+            onClick: () => { if (!editing) setEditing({ index: blocks.length, isNew: true }); },
+          }, '+ ' + labels.addBlock) : null);
+      }
+      return Body;
+    }
+
+    // ---------------------------------------------------------------------
+    // Locale dictionaries.
+    // ---------------------------------------------------------------------
+    const dictionaries = {
+      en: {
+        'viewer.label': 'Editable Markdown',
+        'mode.edit': 'Editable',
+        'mode.readonly': 'Read-only',
+        'hint': 'Click any block to edit it in place · ⌘↩ saves',
+        'edit.placeholder': 'Markdown source of this block…',
+        'edit.save': 'Save',
+        'edit.cancel': 'Cancel',
+        'edit.insertBefore': 'Insert above',
+        'edit.insertAfter': 'Insert below',
+        'edit.delete': 'Delete',
+        'edit.addBlock': 'Add block',
+        'edit.clickToEdit': 'Click to edit this block',
+        'edit.clickToAdd': 'Click to add a block',
+        'status.saving': 'Saving…',
+        'status.saved': 'Saved',
+        'status.failed': 'Save failed',
+        'status.retry': 'Retry',
+        'status.loadFailed': 'Could not load the full document',
+        'status.conflict': 'This file changed on disk while you were editing.',
+        'status.reload': 'Discard mine and reload',
+        'status.keepMine': 'Keep mine',
+      },
+      zh: {
+        'viewer.label': 'Markdown 可编辑',
+        'mode.edit': '可编辑',
+        'mode.readonly': '只读',
+        'hint': '点击任意段落就地编辑 · ⌘↩ 保存',
+        'edit.placeholder': '该块的 Markdown 源码…',
+        'edit.save': '保存',
+        'edit.cancel': '取消',
+        'edit.insertBefore': '上方插入',
+        'edit.insertAfter': '下方插入',
+        'edit.delete': '删除',
+        'edit.addBlock': '添加块',
+        'edit.clickToEdit': '点击编辑此块',
+        'edit.clickToAdd': '点击在此添加段落',
+        'status.saving': '保存中…',
+        'status.saved': '已保存',
+        'status.failed': '保存失败',
+        'status.retry': '重试',
+        'status.loadFailed': '完整文档读取失败',
+        'status.conflict': '该文件在编辑期间被外部修改。',
+        'status.reload': '放弃我的修改并重载',
+        'status.keepMine': '保留我的',
+      },
+    };
+
+    function buildLabels(t) {
+      return {
+        modeEdit: t('mode.edit'),
+        modeReadonly: t('mode.readonly'),
+        hint: t('hint'),
+        placeholder: t('edit.placeholder'),
+        save: t('edit.save'),
+        cancel: t('edit.cancel'),
+        insertBefore: t('edit.insertBefore'),
+        insertAfter: t('edit.insertAfter'),
+        delete: t('edit.delete'),
+        addBlock: t('edit.addBlock'),
+        clickToEdit: t('edit.clickToEdit'),
+        clickToAdd: t('edit.clickToAdd'),
+        saving: t('status.saving'),
+        saved: t('status.saved'),
+        saveFailed: t('status.failed'),
+        retry: t('status.retry'),
+        loadFailed: t('status.loadFailed'),
+        conflict: t('status.conflict'),
+        reload: t('status.reload'),
+        keepMine: t('status.keepMine'),
+      };
+    }
 
     // ---------------------------------------------------------------------
     // Plugin assembly.
     // ---------------------------------------------------------------------
     return {
-      inject: ['slots', 'locale', 'documentPreviews'],
+      inject: ['slots', 'locale', 'documentPreviews', 'remote', 'remote.workspaceFiles'],
       apply(ctx) {
         const t = ctx.locale.bind(NS);
-        const Body = (props) => MarkdownEditBody({ ...props, t });
+        const labels = buildLabels(t);
+        const Body = createBody({ labels, remote: ctx.remote });
+
         ctx.effect(() => ctx.locale.register(NS, {
-          'en': dictionaries.en,
-          'zh': dictionaries.zh,
+          en: dictionaries.en,
+          zh: dictionaries.zh,
         }), 'md-live-edit: locale');
 
         ctx.effect(() => ctx.documentPreviews.register({

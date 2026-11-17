@@ -24,11 +24,27 @@ frontmatter（`---` 块）同样可点编辑。
 
 ## 结构
 
-- `index.js` — Host 半：注册认证 HTTP 端点 `POST /dsh-md-live-edit/api/write`。接收 `{ sessionId, path, content }`，按 workspace-files 相同的规则解析 Session 工作区根（live header → 持久化 header → sandbox 根），经组合 `fs.writeText` 写盘（保留沙箱策略，如 `FS_SANDBOX_DENIED` 会原样回报给 UI）。
+- `index.js` — Host 半：注册 HTTP 端点 `POST /dsh-md-live-edit/api/write`。**进入处理逻辑的第一件事是问 `ctx.connection.requestRejection(req)`**（DSH 自己的 Host/Origin 准入 + 浏览器会话校验），被拒立即返回 403/401，不读请求体、不碰文件系统；Host 若没有这个校验入口则按 401 拒绝（fail closed）。通过后才接收 `{ sessionId, path, content }`，按 workspace-files 相同的规则解析 Session 工作区根（live header → 持久化 header → sandbox 根），经组合 `fs.writeText` 写盘（保留沙箱策略，如 `FS_SANDBOX_DENIED` 会原样回报给 UI）。
 - `client.js` — Client 半：注册 `documentPreviews` 元数据 + `sidebar.right.tab.document` body。自带一个块级 Markdown 解析/渲染器（ATX/Setext 标题、围栏代码、GFM 表格、列表、引用、分割线、frontmatter；行内：粗斜体、删除线、行内代码、链接、图片）。每个块保留精确源码行，单块编辑后全文逐字节重建写回；外部内容变化不会打断正在进行的编辑（冲突提示）。
+- `test/` — `node:test` 用例：准入闸门（被拒时不读 body、不写文件、不解析路径）、注册元数据、Markdown 往返、块级编辑/插入/删除。
+
+## 安全
+
+写盘端点是本插件唯一暴露给页面调用的能力，因此它**完全依赖 DSH 的准入判定**，不自行实现鉴权：
+
+- `requestRejection` 先做 Host/Origin 围栏，再做浏览器会话 / API 凭据校验；`authorizeIndex` 只管用启动令牌发 `index.html`，不适用于 API 路由。
+- 被拒请求在处理最前面返回，请求体不会被消费，`fs` 不会被调用。
+- 写文件仍走组合 `fs`，因此 Harness 的 sandbox policy（如 `read-only`）继续生效。
+
+## 开发
+
+```bash
+npm test        # node --test test/*.test.mjs
+```
 
 ## 已知边界
 
 - 列表渲染为单级（嵌套项按 continuation 文本处理，源码无损）。
 - 不渲染数学公式与嵌套引用样式；这些块照常可编辑、源码不丢。
 - 写文件权限沿用 Harness 的 sandbox policy：`read-only` 模式下保存会失败并在 UI 显示原因。
+- 需要 DSH `>=0.2.2-rc.1`（`connection.requestRejection` 所在版本线）；更老的 Host 上端点按 401 拒绝。

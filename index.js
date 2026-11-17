@@ -74,7 +74,15 @@ export function apply(ctx) {
       // Host/Origin fence + browser authentication, the same gate every
       // other authenticated Host route asks `connection` for. `authorizeIndex`
       // only serves index.html with a launch token, so it is not this route's gate.
-      const rejection = ctx.connection.requestRejection(req);
+      const requestRejection = ctx.connection.requestRejection;
+      if (typeof requestRejection !== 'function') {
+        // Fail closed on a Host without the fence rather than serving an
+        // unauthenticated write route.
+        res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end('Unauthorized');
+        return;
+      }
+      const rejection = requestRejection.call(ctx.connection, req);
       if (rejection !== undefined) {
         res.writeHead(rejection, { 'content-type': 'text/plain; charset=utf-8' });
         res.end(rejection === 401 ? 'Unauthorized' : 'Forbidden');
@@ -101,10 +109,7 @@ export function apply(ctx) {
       try {
         const cwd = await workspaceRootOf(sessionId);
         const target = await ctx.fs.resolve(path, { cwd });
-        const expected = typeof request.expectedVersion === 'string'
-          ? { version: request.expectedVersion }
-          : undefined;
-        const outcome = await ctx.fs.writeText(target, content, expected);
+        const outcome = await ctx.fs.writeText(target, content);
         sendJson(res, 200, {
           ok: true,
           operation: outcome?.operation,
