@@ -4,6 +4,21 @@ All notable changes to `@fanfan4589/dsh-md-live-edit` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.5 — 2026-11-17
+
+### Docs
+
+- Split the README into English (`README.md`) and Chinese (`README.zh.md`), with
+  honest limitations, a capability matrix, both install paths, and the test map.
+- Added `CONTRIBUTING.md` (ground rules: no Host bypass, admission gate, sandbox
+  policy, module-id contract) and `RELEASING.md` (version, changelog, dry-run,
+  publish, tag, push, verification).
+- Added a one-image plugin detail page: `docs/DETAIL.md`,
+  `docs/DETAIL.zh.md`, and a text-free `docs/preview.svg`, declared through
+  `meta.detail` in both locales.
+- Added annotated how-it-works diagrams (English and Chinese) referenced by the
+  READMEs.
+
 ## 1.0.4 — 2026-11-17
 
 ### Fixed

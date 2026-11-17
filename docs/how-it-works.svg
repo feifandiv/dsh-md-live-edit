@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" font-family="-apple-system,'PingFang SC','Segoe UI',Roboto,sans-serif">
+<rect x="0.5" y="0.5" width="1199" height="679" rx="16" fill="#f7f9fc" stroke="#dfe5ee"/>
+<text x="40" y="50" font-size="20" font-weight="600" fill="#1c2430">dsh-md-live-edit — edit Markdown in the sidebar preview</text>
+<text x="1160" y="50" font-size="11.5" fill="#8793a8" text-anchor="end">Schematic of the real UI, not a screenshot</text>
+
+<!-- ============ panel 1 ============ -->
+<rect x="40" y="76" width="352" height="416" rx="12" fill="#ffffff" stroke="#dfe5ee"/>
+<text x="60" y="104" font-size="13.5" font-weight="600" fill="#2f6fed">1  Click any block</text>
+<rect x="60" y="118" width="312" height="26" rx="6" fill="#f2f4f8"/>
+<text x="72" y="136" font-size="11.5" fill="#5b6779" font-family="ui-monospace,'SF Mono',Menlo,monospace">…/md-edit-test.md</text>
+<rect x="60" y="152" width="52" height="20" rx="10" fill="#2f6fed"/>
+<text x="86" y="166" font-size="10.5" fill="#ffffff" text-anchor="middle">Editable</text>
+<text x="120" y="166" font-size="11" fill="#8793a8">Rendered Markdown, click a paragraph</text>
+<text x="60" y="202" font-size="15" font-weight="600" fill="#1c2430">Heading</text>
+<rect x="56" y="214" width="320" height="42" rx="8" fill="#e8f0ff" stroke="#2f6fed" stroke-width="1.5"/>
+<text x="68" y="240" font-size="12.5" fill="#1c2430">Click me — I turn into an editor.</text>
+<path d="M356 244l0 14 4-4 3 7 3-1-3-7 5 0z" fill="#1c2430" opacity="0.7"/>
+<text x="60" y="284" font-size="12.5" fill="#1c2430">Bold, italic and lists render normally.</text>
+<text x="60" y="312" font-size="12.5" fill="#1c2430">•  Bold   •  Italic   •  Strike</text>
+<g stroke="#dfe5ee" fill="none"><rect x="60" y="330" width="312" height="56" rx="6"/>
+<path d="M60 348h312M158 330v56M250 330v56"/></g>
+
+<!-- ============ arrow ============ -->
+<path d="M400 284h40" stroke="#b6c1d2" stroke-width="2"/>
+<path d="M436 277l10 7-10 7z" fill="#b6c1d2"/>
+
+<!-- ============ panel 2 ============ -->
+<rect x="456" y="76" width="352" height="416" rx="12" fill="#ffffff" stroke="#dfe5ee"/>
+<text x="476" y="104" font-size="13.5" font-weight="600" fill="#2f6fed">2  Edit that block in place</text>
+<rect x="476" y="122" width="312" height="188" rx="10" fill="#fbfcfe" stroke="#2f6fed" stroke-width="1.5"/>
+<text x="492" y="152" font-size="12" fill="#1c2430" font-family="ui-monospace,'SF Mono',Menlo,monospace">Click me — I become an editor</text>
+<text x="492" y="176" font-size="12" fill="#5b6779" font-family="ui-monospace,'SF Mono',Menlo,monospace">**bold** and *italic* stay Markdown</text>
+<rect x="492" y="196" width="180" height="7" rx="3.5" fill="#dde3ec"/>
+<rect x="492" y="212" width="242" height="7" rx="3.5" fill="#dde3ec"/>
+<rect x="492" y="228" width="132" height="7" rx="3.5" fill="#dde3ec"/>
+<rect x="492" y="256" width="70" height="30" rx="7" fill="#2f6fed"/>
+<text x="527" y="276" font-size="12" fill="#ffffff" text-anchor="middle">Save</text>
+<rect x="568" y="256" width="58" height="30" rx="7" fill="#f0f3f9" stroke="#dfe5ee"/>
+<text x="597" y="276" font-size="12" fill="#1c2430" text-anchor="middle">Cancel</text>
+<rect x="632" y="256" width="70" height="30" rx="7" fill="#f0f3f9" stroke="#dfe5ee"/>
+<text x="667" y="276" font-size="11.5" fill="#1c2430" text-anchor="middle">↑ Insert</text>
+<rect x="708" y="256" width="70" height="30" rx="7" fill="#f0f3f9" stroke="#dfe5ee"/>
+<text x="743" y="276" font-size="11.5" fill="#1c2430" text-anchor="middle">↓ Insert</text>
+<text x="476" y="340" font-size="11" fill="#8793a8">The block becomes its own source editor</text>
+
+<!-- ============ arrow ============ -->
+<path d="M812 284h40" stroke="#b6c1d2" stroke-width="2"/>
+<path d="M848 277l10 7-10 7z" fill="#b6c1d2"/>
+
+<!-- ============ panel 3 ============ -->
+<rect x="868" y="76" width="292" height="416" rx="12" fill="#ffffff" stroke="#dfe5ee"/>
+<text x="888" y="104" font-size="13.5" font-weight="600" fill="#2f6fed">3  ⌘↩ saves to the file</text>
+<rect x="888" y="118" width="252" height="26" rx="6" fill="#f2f4f8"/>
+<text x="900" y="136" font-size="11.5" fill="#5b6779" font-family="ui-monospace,'SF Mono',Menlo,monospace">…/md-edit-test.md</text>
+<rect x="888" y="152" width="252" height="26" rx="6" fill="#ffffff" stroke="#dfe5ee"/>
+<text x="900" y="170" font-size="11.5" fill="#1c2430">Markdown  Editable</text>
+<text x="1122" y="170" font-size="11" fill="#8793a8" text-anchor="end">▾</text>
+<text x="888" y="206" font-size="15" font-weight="600" fill="#1c2430">Heading</text>
+<rect x="884" y="218" width="260" height="38" rx="8" fill="#f3f7ff" stroke="#dfe5ee"/>
+<text x="896" y="242" font-size="12" fill="#1c2430">Click me — I turn into an editor.</text>
+<text x="888" y="292" font-size="12" fill="#1c2430">Bold, italic and lists render normally.</text>
+<rect x="888" y="310" width="252" height="48" rx="6" fill="#ffffff" stroke="#dfe5ee"/>
+<g stroke="#dfe5ee"><path d="M888 326h252M948 310v48M1010 310v48"/></g>
+<rect x="888" y="380" width="112" height="30" rx="15" fill="#e7f7ee" stroke="#7dc4a0"/>
+<path d="M902 395l4 4 7-8" stroke="#1f9d55" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="920" y="400" font-size="12" fill="#1f9d55">Saved</text>
+<text x="888" y="440" font-size="11" fill="#8793a8">Back to rendered view, file already on disk</text>
+
+<!-- ============ bottom: dropdown ============ -->
+<rect x="40" y="516" width="1120" height="150" rx="12" fill="#ffffff" stroke="#dfe5ee"/>
+<text x="64" y="548" font-size="13" font-weight="600" fill="#1c2430">Renderer dropdown: switch back to read-only Markdown any time</text>
+<rect x="64" y="558" width="196" height="32" rx="8" fill="#ffffff" stroke="#dfe5ee"/>
+<text x="80" y="579" font-size="12.5" fill="#1c2430">Markdown</text>
+<text x="244" y="579" font-size="11" fill="#8793a8" text-anchor="end">▾</text>
+<rect x="64" y="598" width="196" height="62" rx="8" fill="#ffffff" stroke="#dfe5ee"/>
+<rect x="65" y="599" width="194" height="30" fill="#f3f7ff"/>
+<text x="80" y="619" font-size="12" fill="#1c2430">Markdown  Editable</text>
+<text x="248" y="619" font-size="11" fill="#1f9d55" text-anchor="end">✓</text>
+<text x="80" y="649" font-size="12" fill="#5b6779">Markdown</text>
+</svg>

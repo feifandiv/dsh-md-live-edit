@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300">
+  <g fill="none" stroke="#c3ccdb" stroke-width="1.5">
+    <rect x="24" y="22" width="264" height="256" rx="12" fill="#f5f7fb"/>
+  </g>
+  <!-- document -->
+  <rect x="46" y="42" width="118" height="14" rx="4" fill="#39445a"/>
+  <rect x="46" y="72" width="186" height="8" rx="4" fill="#a7b3c6"/>
+  <rect x="46" y="88" width="150" height="8" rx="4" fill="#a7b3c6"/>
+  <!-- highlighted block -->
+  <rect x="40" y="112" width="232" height="52" rx="8" fill="#e8f0ff" stroke="#2f6fed" stroke-width="2"/>
+  <rect x="52" y="126" width="170" height="8" rx="4" fill="#7d8ca6"/>
+  <rect x="52" y="142" width="132" height="8" rx="4" fill="#7d8ca6"/>
+  <circle cx="264" cy="118" r="9" fill="#2f6fed"/>
+  <path d="M259.5 118.5l3 3 5-6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- list -->
+  <g fill="#a7b3c6">
+    <circle cx="50" cy="184" r="3"/><rect x="60" y="180" width="150" height="8" rx="4"/>
+    <circle cx="50" cy="202" r="3"/><rect x="60" y="198" width="126" height="8" rx="4"/>
+    <circle cx="50" cy="220" r="3"/><rect x="60" y="216" width="164" height="8" rx="4"/>
+  </g>
+  <!-- table -->
+  <g stroke="#c3ccdb" stroke-width="1.2" fill="none">
+    <rect x="46" y="236" width="212" height="30" rx="4"/>
+    <path d="M46 251h212M116 236v30M176 236v30"/>
+  </g>
+
+  <!-- connector: click -->
+  <path d="M288 138h40" stroke="#2f6fed" stroke-width="2" stroke-dasharray="5 5" fill="none"/>
+  <path d="M324 133l8 5-8 5z" fill="#2f6fed"/>
+
+  <!-- editor card -->
+  <rect x="344" y="52" width="272" height="196" rx="12" fill="#ffffff" stroke="#c3ccdb" stroke-width="1.5"/>
+  <rect x="344" y="52" width="272" height="30" rx="12" fill="#f0f3f9"/>
+  <circle cx="362" cy="67" r="3.5" fill="#f0a04b"/>
+  <circle cx="375" cy="67" r="3.5" fill="#7dc4a0"/>
+  <rect x="360" y="98" width="188" height="8" rx="4" fill="#8a97ad"/>
+  <rect x="360" y="114" width="150" height="8" rx="4" fill="#b6c1d2"/>
+  <rect x="360" y="130" width="204" height="8" rx="4" fill="#b6c1d2"/>
+  <rect x="360" y="146" width="112" height="8" rx="4" fill="#b6c1d2"/>
+  <!-- buttons -->
+  <rect x="360" y="182" width="74" height="28" rx="7" fill="#2f6fed"/>
+  <path d="M372 196l4 4 7-8" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="440" y="182" width="56" height="28" rx="7" fill="#f0f3f9" stroke="#c3ccdb"/>
+  <rect x="504" y="182" width="64" height="28" rx="7" fill="#f0f3f9" stroke="#c3ccdb"/>
+  <rect x="576" y="182" width="28" height="28" rx="7" fill="#fdf0ef" stroke="#e8a6a2"/>
+  <!-- saved badge -->
+  <circle cx="590" cy="72" r="12" fill="#e7f7ee" stroke="#7dc4a0"/>
+  <path d="M584.5 72.5l4 4 7-8" stroke="#1f9d55" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

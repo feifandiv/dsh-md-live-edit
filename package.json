@@ -1,6 +1,6 @@
 {
   "name": "@fanfan4589/dsh-md-live-edit",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Edit Markdown files directly in the sidebar preview: block-level editing on the rendered view, without switching to a code mode.",
   "type": "module",
   "license": "MIT",
@@ -19,7 +19,11 @@
     "icon.svg",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "README.zh.md",
+    "CONTRIBUTING.md",
+    "RELEASING.md",
+    "docs"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs"

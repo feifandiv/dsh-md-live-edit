@@ -1,50 +1,152 @@
 # @fanfan4589/dsh-md-live-edit
 
-[![npm](https://img.shields.io/npm/v/@fanfan4589/dsh-md-live-edit)](https://www.npmjs.com/package/@fanfan4589/dsh-md-live-edit) [![license](https://img.shields.io/npm/l/@fanfan4589/dsh-md-live-edit)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@fanfan4589/dsh-md-live-edit)](https://www.npmjs.com/package/@fanfan4589/dsh-md-live-edit)
+[![license](https://img.shields.io/npm/l/@fanfan4589/dsh-md-live-edit)](./LICENSE)
+[![tests](https://img.shields.io/badge/tests-34%20passing-brightgreen)](./test)
 
+English | [中文](README.zh.md)
 
-在侧边栏预览里**直接编辑** Markdown 文件：点击渲染出的任意文本块就地编辑，全文自动写回磁盘，无需切换到代码模式。
+Edit Markdown files **directly in the sidebar preview**: click any rendered block,
+edit that block's Markdown source in place, and save the whole document back to
+disk. No code mode, no separate editor.
 
-> **定位｜克制的小功能补丁。** 只做这一件事，不改 DSH 主体：不替换内置槽位与布局、不改内核行为、不碰其他插件的数据。升级 DSH 一般无需跟着改；关掉或卸载即回到官方状态。
+![Three panels: click a block, edit it in place, save with ⌘↩](./docs/how-it-works.svg)
 
-## 它解决什么
+> **Scope: a small, restrained patch.** It adds one preview implementation and
+> one write route. It does not replace built-in slots or layout, does not change
+> kernel behaviour, and does not touch other plugins' data. Turning it off
+> returns the sidebar to the official read-only preview.
 
-DSH 的侧边栏 Markdown 预览是只读的（见 `dsh-client-ui-sidebar-documentpreview` 的 “Preview, not editing” 限制）。本插件注册一个同扩展名（`md`/`markdown`）的 `extension`-band 预览实现，优先级高于内置只读版，默认选中；下拉菜单里随时可切回内置的 “Markdown” 只读渲染。
+## What it solves
 
-## 使用
+The built-in sidebar preview is view-only (`dsh-client-ui-sidebar-documentpreview`
+documents "Preview, not editing"). To change a word you had to leave the rendered
+view, find a text editor, and lose the context of the surrounding document.
 
-1. 在右侧边栏打开任意 `.md` 文件（文件树点它，或 `Mod+P` 走 files 页）。
-2. 文档以渲染形态呈现。点击任意文本块 → 该块原地变为编辑框，显示该块的 Markdown 源码。
-3. `⌘/Ctrl + Enter` 或移开焦点即保存；`Esc` 取消。
-4. 编辑工具条还支持：上方/下方插入块、删除块；文档末尾有 “添加块” 入口；空块保存即删除。
-5. 保存状态显示在顶部：保存中… / 已保存 / 保存失败（可重试）。
-6. 文件若在别处被修改，顶部出现冲突提示：放弃本地修改重新加载，或保留本地编辑。
+This plugin registers an `extension`-band Markdown preview with the same
+extensions (`md`, `markdown`). It ranks above the built-in renderer and is
+selected by default; the renderer dropdown still offers the built-in read-only
+**Markdown**, **Code**, and **Plain text** views at any time.
 
-frontmatter（`---` 块）同样可点编辑。
+## How to use
 
-## 结构
+1. Open any `.md` file in the right Sidebar (file tree, or `Mod+P` → files page).
+2. The document renders as blocks. The header shows the **Markdown 可编辑 /
+   Editable Markdown** renderer, and the body carries a green **可编辑** chip.
+3. **Click a block** → it becomes a small editor holding that block's exact
+   Markdown source. Everything else stays rendered.
+4. Press `⌘/Ctrl + Enter` (or click **Save**) to write the document back.
+   `Esc` / **Cancel** discards the edit for that block.
+5. The editor toolbar also inserts a block above or below, and deletes the block
+   (an emptied block is deleted; a deletion collapses the blank line it leaves).
+   A **+ Add block** affordance sits at the end of the document.
+6. The header reports save state: saving / saved / failed (with retry). If the
+   file changes elsewhere while you edit, a conflict banner lets you reload the
+   disk version or keep yours.
 
-- `index.js` — Host 半：注册 HTTP 端点 `POST /dsh-md-live-edit/api/write`。**进入处理逻辑的第一件事是问 `ctx.connection.requestRejection(req)`**（DSH 自己的 Host/Origin 准入 + 浏览器会话校验），被拒立即返回 403/401，不读请求体、不碰文件系统；Host 若没有这个校验入口则按 401 拒绝（fail closed）。通过后才接收 `{ sessionId, path, content }`，按 workspace-files 相同的规则解析 Session 工作区根（live header → 持久化 header → sandbox 根），经组合 `fs.writeText` 写盘（保留沙箱策略，如 `FS_SANDBOX_DENIED` 会原样回报给 UI）。
-- `client.js` — Client 半：注册 `documentPreviews` 元数据 + `sidebar.right.tab.document` body。自带一个块级 Markdown 解析/渲染器（ATX/Setext 标题、围栏代码、GFM 表格、列表、引用、分割线、frontmatter；行内：粗斜体、删除线、行内代码、链接、图片）。每个块保留精确源码行，单块编辑后全文逐字节重建写回；外部内容变化不会打断正在进行的编辑（冲突提示）。
-- `test/` — `node:test` 用例：准入闸门（被拒时不读 body、不写文件、不解析路径）、注册元数据、Markdown 往返、块级编辑/插入/删除。
+Frontmatter (`---` blocks) is editable like any other block.
 
-## 安全
+### Editing a table
 
-写盘端点是本插件唯一暴露给页面调用的能力，因此它**完全依赖 DSH 的准入判定**，不自行实现鉴权：
+A table block opens as its own Markdown table. Add a row by adding one line:
 
-- `requestRejection` 先做 Host/Origin 围栏，再做浏览器会话 / API 凭据校验；`authorizeIndex` 只管用启动令牌发 `index.html`，不适用于 API 路由。
-- 被拒请求在处理最前面返回，请求体不会被消费，`fs` 不会被调用。
-- 写文件仍走组合 `fs`，因此 Harness 的 sandbox policy（如 `read-only`）继续生效。
-
-## 开发
-
-```bash
-npm test        # node --test test/*.test.mjs
+```markdown
+| Capability | Status | Note |
+| --- | --- | --- |
+| In-place edit | ✅ | click any block |
+| Save | ✅ | ⌘↩ |
 ```
 
-## 已知边界
+Save, and the rendered table updates.
 
-- 列表渲染为单级（嵌套项按 continuation 文本处理，源码无损）。
-- 不渲染数学公式与嵌套引用样式；这些块照常可编辑、源码不丢。
-- 写文件权限沿用 Harness 的 sandbox policy：`read-only` 模式下保存会失败并在 UI 显示原因。
-- 需要 DSH `>=0.2.2-rc.1`（`connection.requestRejection` 所在版本线）；更老的 Host 上端点按 401 拒绝。
+## Advantages
+
+- **Stay in the rendered view.** No mode switch, no full-document source view.
+- **Source fidelity.** Every block keeps its exact source lines; editing one
+  block rebuilds the file byte-for-byte around it, so untouched formatting,
+  frontmatter, and spacing survive.
+- **Whole-document safety.** Large files are completed page by page before
+  editing is allowed, so a save can never write back only the first page.
+- **Sandbox respected.** Writes go through the composed `fs` with the session's
+  own policy (`sandboxPolicy.resolve({ session })`); a `read-only` session is
+  refused rather than widened.
+- **Admission-gated route.** The write route asks
+  `connection.requestRejection` (Host/Origin fence + browser session) before it
+  reads a body; a rejected request touches neither the body nor the filesystem.
+- **Matches the host.** Theme tokens only; bilingual (English / 中文); follows
+  `ctx.locale` and switches live.
+
+## Limitations (honest)
+
+- **Block source editing, not rich text.** You edit the block's Markdown source
+  (a table opens as a table). It is not a Word/Excel-style direct surface; there
+  is no cell-by-cell table editing.
+- **No new files, no renames.** It edits the open file only; creating files and
+  renaming stay in the files panel.
+- **Rendering is a deliberate subset.** ATX/Setext headings, fenced code, GFM
+  tables, lists, blockquotes, rules, frontmatter; inline bold/italic/strike/code/
+  links/images. Nested lists render at one level, and math or nested-quote
+  styling is not rendered — the source is still intact and editable.
+- **Whole-file writes.** A save rewrites the file; concurrent external writes are
+  detected while you edit and surfaced as a conflict, but there is no per-line
+  patch transport.
+- **Version floor.** Requires DSH `>=0.2.2-rc.1` (the release line whose
+  `connection` service exposes `requestRejection`). On an older Host the route
+  fails closed with `401` rather than serving an unguarded write.
+- **Save mode follows the session.** In `read-only` sessions the preview is
+  editable locally but the save is refused with the sandbox reason.
+
+## Capability matrix
+
+| Area | Supported |
+| --- | --- |
+| File types | `.md`, `.markdown` |
+| Block editing | headings, paragraphs, lists, blockquotes, fenced code, tables, rules, frontmatter |
+| Inline rendering | bold, italic, strikethrough, inline code, links, images |
+| Block actions | edit, delete, insert above, insert below, append at end |
+| Save | `⌘/Ctrl+Enter`, Save button; whole document |
+| Conflict handling | external-change banner, reload or keep |
+| Renderer | default; dropdown switches to built-in Markdown / Code / Plain text |
+| Locales | English, 中文 |
+
+## Install
+
+### Add the local directory
+
+```bash
+git clone https://github.com/feifandiv/dsh-md-live-edit.git
+```
+
+Then add it as a bundle in DSH (Settings → Plugins → add/clone the directory, or
+`plugin_manager` with `install_bundle` and the absolute package path). The
+bundle row is `md-live-edit`.
+
+### From npm
+
+```bash
+npm pack @fanfan4589/dsh-md-live-edit
+tar -xzf fanfan4589-dsh-md-live-edit-*.tgz
+# add the extracted package directory as a bundle in DSH
+```
+
+## Development
+
+```bash
+npm test        # node --test test/*.test.mjs — 34 cases
+```
+
+| Path | Responsibility |
+| --- | --- |
+| `index.js` | Host half: the admission-gated `POST /dsh-md-live-edit/api/write` route |
+| `client.js` | Client half: preview metadata, keyed document body, block parser and in-place editor |
+| `test/gate.test.mjs` | Route admission, body/fs isolation on rejection, sandbox policy |
+| `test/client.test.mjs` | Module identity, registration metadata, parser round-trip, text transforms |
+| `test/render.test.mjs` | End-to-end body rendering under a VM timeout |
+| `test/inline.test.mjs` | Inline renderer termination, watched in a child process |
+| `test/labels.test.mjs` | Localized labels, no raw locale keys in the UI |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [RELEASING.md](RELEASING.md).
+
+## License
+
+[MIT](LICENSE) © feifandiv
