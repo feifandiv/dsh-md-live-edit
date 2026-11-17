@@ -71,7 +71,15 @@ export function apply(ctx) {
     kind: 'exact',
     path: ROUTE,
     handler: async (req, res) => {
-      if (!ctx.connection.authorizeIndex(req, res)) return;
+      // Host/Origin fence + browser authentication, the same gate every
+      // other authenticated Host route asks `connection` for. `authorizeIndex`
+      // only serves index.html with a launch token, so it is not this route's gate.
+      const rejection = ctx.connection.requestRejection(req);
+      if (rejection !== undefined) {
+        res.writeHead(rejection, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(rejection === 401 ? 'Unauthorized' : 'Forbidden');
+        return;
+      }
       if (req.method !== 'POST') { sendJson(res, 405, { ok: false, error: 'POST required' }); return; }
       if (!String(req.headers['content-type'] || '').startsWith('application/json')) {
         sendJson(res, 415, { ok: false, error: 'application/json required' }); return;
