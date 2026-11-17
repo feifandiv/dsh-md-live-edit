@@ -48,23 +48,27 @@ function errorCode(error) {
 
 export function apply(ctx) {
   /**
-   * Resolve the Session's workspace root the way the workspace-files service
-   * does: live header first, then the persistence header-only stat, with the
-   * sandbox workspace root as the no-cwd fallback.
+   * Resolve the workspace root AND the sandbox policy this Session's writes
+   * must obey. `resolve({ session })` is what the model-facing file tools use:
+   * the session's logged mode plus its cwd as the workspace-write boundary.
+   * Passing no policy would fall back to the deployment root and deny writes
+   * inside the session's own working directory.
    * @param sessionId - Session named by the file address.
-   * @returns the effective workspace root path.
+   * @returns the cwd to resolve relative paths against, and the policy to pass to fs.
    */
-  async function workspaceRootOf(sessionId) {
-    const sessions = ctx.get('sessions');
-    const live = sessions?.get(sessionId)?.header;
-    let header = live;
-    if (header === undefined) {
+  async function workspaceContextOf(sessionId) {
+    const agents = ctx.get('agents');
+    const session = agents?.get?.(sessionId)?.session;
+    let cwd = session?.header?.cwd;
+    if (cwd === undefined) {
       const persistence = ctx.get('sessionPersistence');
       const stored = await persistence?.stat(sessionId);
-      header = stored?.header;
+      cwd = stored?.header?.cwd;
     }
     const sandbox = ctx.get('sandboxPolicy');
-    return header?.cwd ?? sandbox?.workspaceRoot;
+    if (cwd === undefined) cwd = sandbox?.workspaceRoot;
+    const policy = sandbox?.resolve(session === undefined ? {} : { session });
+    return { cwd, policy };
   }
 
   ctx.effect(() => ctx.webServer.register({
@@ -107,9 +111,9 @@ export function apply(ctx) {
       }
 
       try {
-        const cwd = await workspaceRootOf(sessionId);
+        const { cwd, policy } = await workspaceContextOf(sessionId);
         const target = await ctx.fs.resolve(path, { cwd });
-        const outcome = await ctx.fs.writeText(target, content);
+        const outcome = await ctx.fs.writeText(target, content, undefined, undefined, policy);
         sendJson(res, 200, {
           ok: true,
           operation: outcome?.operation,

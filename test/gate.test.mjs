@@ -12,22 +12,38 @@ import { apply, inject } from '../index.js';
 
 const SESSION_ID = 'session-test';
 const CWD = '/work';
+const DEPLOYMENT_ROOT = '/deployment-root';
+const LIVE_SESSION = { header: { cwd: CWD } };
 
 /**
  * Build a plugin context and run apply(), capturing the registered route.
  * @param {object} options - rejection value returned by requestRejection, and fs overrides.
  * @returns the captured handler plus spies for every side effect we forbid on rejection.
  */
-function mount({ rejection, writeImpl, resolveImpl, withoutFence = false } = {}) {
+function mount({ rejection, writeImpl, resolveImpl, withoutFence = false, live = true, resolvePolicy } = {}) {
   const state = {
     handler: undefined,
     rejections: 0,
     resolved: [],
     written: [],
+    policyRequests: [],
   };
   const ctx = {
     get(name) {
-      if (name === 'sessions') return { get: () => ({ header: { cwd: CWD } }) };
+      if (name === 'agents') {
+        return live ? { get: () => ({ session: LIVE_SESSION }) } : undefined;
+      }
+      if (name === 'sandboxPolicy') {
+        return {
+          workspaceRoot: DEPLOYMENT_ROOT,
+          resolve(request) {
+            state.policyRequests.push(request);
+            return resolvePolicy
+              ? resolvePolicy(request)
+              : { mode: 'workspace-write', workspaceRoot: CWD };
+          },
+        };
+      }
       return undefined;
     },
     fs: {
@@ -36,9 +52,9 @@ function mount({ rejection, writeImpl, resolveImpl, withoutFence = false } = {})
         if (resolveImpl) return resolveImpl(path, opts);
         return { displayPath: path, targetKey: path };
       },
-      async writeText(target, content) {
-        state.written.push({ target, content });
-        if (writeImpl) return writeImpl(target, content);
+      async writeText(target, content, expected, signal, policy) {
+        state.written.push({ target, content, policy });
+        if (writeImpl) return writeImpl(target, content, policy);
         return { operation: 'update', version: 'v2' };
       },
     },
@@ -123,6 +139,7 @@ test('403 rejection: returns before reading the body and never touches the files
   assert.equal(flags.bodyRead, false, 'a rejected request must not have its body consumed');
   assert.deepEqual(state.resolved, [], 'fs.resolve must not run for a rejected request');
   assert.deepEqual(state.written, [], 'fs.writeText must not run for a rejected request');
+  assert.deepEqual(state.policyRequests, [], 'a rejected request must not resolve a sandbox policy');
 });
 
 test('401 rejection: returns Unauthorized without reading the body or writing', async () => {
@@ -177,6 +194,32 @@ test('allowed request writes the file and reports the outcome', async () => {
   assert.equal(state.written.length, 1);
   assert.deepEqual(state.written[0].target, { displayPath: 'notes.md', targetKey: 'notes.md' });
   assert.equal(state.written[0].content, '# Edited\n');
+  assert.deepEqual(state.policyRequests, [{ session: LIVE_SESSION }],
+    'writes must resolve the policy for this Session');
+  assert.deepEqual(state.written[0].policy, { mode: 'workspace-write', workspaceRoot: CWD },
+    'the session workspace root, not the deployment fallback, bounds the write');
+});
+
+test('a session without a live agent falls back to the deployment policy', async () => {
+  const { state, handler } = mount({ live: false, resolvePolicy: () => ({ mode: 'workspace-write', workspaceRoot: DEPLOYMENT_ROOT }) });
+  const { req } = makeRequest({ body: validBody });
+  const res = makeResponse();
+
+  await handler(req, res);
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(state.policyRequests, [{}], 'no session is handed to resolve()');
+  assert.equal(state.written[0].policy.workspaceRoot, DEPLOYMENT_ROOT);
+});
+
+test('a read-only session policy is passed through, not widened', async () => {
+  const { state, handler } = mount({ resolvePolicy: () => ({ mode: 'read-only', workspaceRoot: CWD }) });
+  const { req } = makeRequest({ body: validBody });
+  const res = makeResponse();
+
+  await handler(req, res);
+
+  assert.equal(state.written[0].policy.mode, 'read-only', 'the enforcing fs must still deny the write');
 });
 
 test('allowed but non-POST is rejected with 405 before touching the filesystem', async () => {

@@ -4,6 +4,25 @@ All notable changes to `@fanfan4589/dsh-md-live-edit` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.4 — 2026-11-17
+
+### Fixed
+
+- **Saving was denied inside the session's own workspace.** The write route
+  called `fs.writeText` without a sandbox policy, so the enforcing filesystem
+  fell back to the deployment default root and rejected files under the
+  session cwd with `file access denied under workspace-write mode`. The route
+  now resolves the policy the way the model-facing file tools do —
+  `sandboxPolicy.resolve({ session })` — which carries the session's logged
+  mode and uses its cwd as the workspace-write boundary, then passes it to
+  `writeText`. A `read-only` session is still refused; nothing is widened.
+
+### Added
+
+- Gate tests now assert the resolved policy reaches `writeText`, that a
+  rejected request never resolves one, that a cold session falls back to the
+  deployment policy, and that a `read-only` policy is passed through unchanged.
+
 ## 1.0.3 — 2026-11-17
 
 ### Fixed
