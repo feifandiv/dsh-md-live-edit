@@ -4,6 +4,34 @@ All notable changes to `@fanfan4589/dsh-md-live-edit` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.2 — 2026-11-17
+
+Critical: this release fixes a renderer crash loop that made the desktop app
+unusable whenever a Markdown preview containing emphasis was restored.
+
+### Fixed
+
+- **Infinite loop in the inline renderer.** `inlineNodes` recursed for
+  `**bold**`, `*italic*`, and `~~strike~~` while sharing one global `/g`
+  regular expression: the recursive call reset `lastIndex`, so the outer scan
+  restarted at the same match forever. Every iteration appended React
+  elements, the renderer heap grew until V8 aborted (`EXC_BREAKPOINT` /
+  `SIGTRAP`, "renderer exited: crashed"), and the app relaunched into the same
+  loop — a crash-restart cycle roughly every 12 seconds on open.
+  The scan now builds a fresh RegExp per call and caps recursion depth, so
+  emphasis renders once and returns.
+- **Lists rendered without their text.** The item regex exposes the text as
+  its third group; the renderer read a fourth, so any bullet or numbered list
+  threw during render.
+- Bold and strike now accept nested emphasis (`**bold *nested* tail**`).
+
+### Added
+
+- `test/render.test.mjs` renders the registered body end to end (emphasis,
+  nesting, lists, tables, quotes, a 1000-paragraph document) under a VM
+  timeout, and `test/inline.test.mjs` runs the inline renderer in a watched
+  child process, so a reintroduced loop fails the suite instead of hanging it.
+
 ## 1.0.1 — 2026-11-17
 
 Security, following the catalog review of the plugin's write route.

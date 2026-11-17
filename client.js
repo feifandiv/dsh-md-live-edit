@@ -254,15 +254,21 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------------
     // Inline renderer: images, links, code, bold, strike, italic.
     // ---------------------------------------------------------------------
-    const INLINE_RX = /(!\[([^\]]*)\]\(([^)\s]+)\))|(\[([^\]]+)\]\(([^)\s]+)\))|(`([^`]+)`)|(\*\*([^*]+)\*\*)|(~~([^~]+)~~)|(\*([^*]+)\*)|(_([^_]+)_)/g;
+    // Inline syntax source. The RegExp is built per call: `inlineNodes` recurses
+    // for emphasis, and a shared /g instance would have its `lastIndex` reset by
+    // the recursive call, restarting the outer scan forever (renderer OOM crash).
+    const INLINE_SOURCE = '(!\\[([^\\]]*)\\]\\(([^)\\s]+)\\))|(\\[([^\\]]+)\\]\\(([^)\\s]+)\\))|(`([^`]+)`)|(\\*\\*(.+?)\\*\\*)|(~~(.+?)~~)|(\\*([^*]+)\\*)|(_([^_]+)_)';
+    /** Bounds recursion for adversarial emphasis nesting. */
+    const MAX_INLINE_DEPTH = 24;
 
-    function inlineNodes(text, keyPrefix) {
+    function inlineNodes(text, keyPrefix, depth = 0) {
       const out = [];
+      if (depth > MAX_INLINE_DEPTH) { out.push(text); return out; }
+      const rx = new RegExp(INLINE_SOURCE, 'g');
       let last = 0;
       let k = 0;
-      INLINE_RX.lastIndex = 0;
       let m;
-      while ((m = INLINE_RX.exec(text)) !== null) {
+      while ((m = rx.exec(text)) !== null) {
         if (m.index > last) out.push(text.slice(last, m.index));
         if (m[1] !== undefined) {
           out.push(h('img', { key: keyPrefix + k++, src: m[3], alt: m[2], className: 'mdle-img' }));
@@ -271,13 +277,13 @@ window.__ModuleLoader__.load({
         } else if (m[7] !== undefined) {
           out.push(h('code', { key: keyPrefix + k++, className: 'mdle-code' }, m[8]));
         } else if (m[9] !== undefined) {
-          out.push(h('strong', { key: keyPrefix + k++ }, inlineNodes(m[10], keyPrefix + 'b' + k)));
+          out.push(h('strong', { key: keyPrefix + k++ }, inlineNodes(m[10], keyPrefix + 'b' + k, depth + 1)));
         } else if (m[11] !== undefined) {
-          out.push(h('s', { key: keyPrefix + k++ }, inlineNodes(m[12], keyPrefix + 's' + k)));
+          out.push(h('s', { key: keyPrefix + k++ }, inlineNodes(m[12], keyPrefix + 's' + k, depth + 1)));
         } else if (m[13] !== undefined) {
-          out.push(h('em', { key: keyPrefix + k++ }, inlineNodes(m[14], keyPrefix + 'i' + k)));
+          out.push(h('em', { key: keyPrefix + k++ }, inlineNodes(m[14], keyPrefix + 'i' + k, depth + 1)));
         } else if (m[15] !== undefined) {
-          out.push(h('em', { key: keyPrefix + k++ }, inlineNodes(m[16], keyPrefix + 'e' + k)));
+          out.push(h('em', { key: keyPrefix + k++ }, inlineNodes(m[16], keyPrefix + 'e' + k, depth + 1)));
         }
         last = m.index + m[0].length;
       }
@@ -322,7 +328,7 @@ window.__ModuleLoader__.load({
       for (const line of block.lines) {
         const m = /^(\s*)(?:[-*+]|\d{1,9}[.)])(\s+)(.*)$/.exec(line);
         if (m && m[1].replace(/\t/g, '  ').length <= 3) {
-          items.push({ ordered: /^\d/.test(line.trim()), text: m[4] });
+          items.push({ ordered: /^\d/.test(line.trim()), text: m[3] });
         } else if (items.length) {
           items[items.length - 1].text += '\n' + line.trim();
         }
